@@ -18,11 +18,19 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
 // ---------------------------------------------------------------------------
 const app = express();
 
-// CORS – allow configured origins and local/mobile development
+// CORS – allow configured origins and local/LAN/mobile development
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin || ALLOWED_ORIGINS.includes(origin) || origin.startsWith("http://localhost") || origin.startsWith("https://localhost") || origin.startsWith("capacitor://")) {
+      if (
+        !origin ||
+        ALLOWED_ORIGINS.includes(origin) ||
+        origin.startsWith("http://localhost") ||
+        origin.startsWith("https://localhost") ||
+        origin.startsWith("http://192.168.") ||
+        origin.startsWith("http://10.") ||
+        origin.startsWith("capacitor://")
+      ) {
         return cb(null, true);
       }
       return cb(new Error("Not allowed by CORS"));
@@ -63,6 +71,15 @@ const upload = multer({
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
+
+// GET / – friendly root status response
+app.get("/", (_req, res) => {
+  res.json({
+    status: "ok",
+    service: "drishti-ai-backend",
+    message: "Drishti AI Express API is running. Use /api/health, /api/model/status, or POST /api/predict.",
+  });
+});
 
 // GET /api/health – simple liveness probe
 app.get("/api/health", (_req, res) => {

@@ -158,6 +158,44 @@ npm run dev
 
 Open **http://localhost:5173** in Google Chrome or Microsoft Edge.
 
+### 3. Connecting Phones & Teammates to Your Local Server (Wi-Fi / LAN)
+
+If you or a teammate want an Android phone (APK) to use **Real AI Mode** against a locally running PC server:
+
+1. **Find the host PC's Wi-Fi IPv4 address:**
+   - Windows: run `ipconfig` and copy the **IPv4 Address** under Wi-Fi (e.g., `192.168.1.15`).
+   - macOS/Linux: run `ifconfig` or `ip addr`.
+
+2. **Set the backend URL in `.env`** in the project root before building the APK:
+
+   ```env
+   VITE_API_BASE_URL=http://<HOST_PC_IP>:3001
+   ```
+
+   *(Vite bakes `VITE_API_BASE_URL` into the bundle at build time, so run `npm run build` and `npx cap sync android` whenever this IP changes.)*
+
+3. **Allow port `3001` through Windows Firewall** (run PowerShell as **Administrator**):
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "Drishti AI Backend 3001" -Direction Inbound -Protocol TCP -LocalPort 3001 -Action Allow
+   ```
+
+   If the phone still hangs when loading, check for and remove any explicit `Block` rules on `node.exe`:
+
+   ```powershell
+   Remove-NetFirewallRule -DisplayName "Node.js JavaScript Runtime"
+   New-NetFirewallRule -DisplayName "Node.js Drishti Allow" -Direction Inbound -Program "C:\Program Files\nodejs\node.exe" -Action Allow
+   ```
+
+4. **Verify connectivity from the phone:**
+   Connect the phone to the **same Wi-Fi** as the host PC and open `http://<HOST_PC_IP>:3001/api/health` in the phone's browser. It should return `{"status":"ok",...}`.
+
+5. *(Optional, for remote teammates on different networks)* Expose port `3001` over HTTPS using an SSH tunnel and put that `https://` URL in `.env`:
+
+   ```powershell
+   ssh -R 80:localhost:3001 nokey@localhost.run
+   ```
+
 ---
 
 ## Building the Android APK

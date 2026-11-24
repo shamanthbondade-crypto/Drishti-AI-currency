@@ -264,6 +264,16 @@ def _active_engine_label() -> str:
     return "opencv-chroma-vision-v1"
 
 
+@app.get("/")
+async def root():
+    return {
+        "status": "ok",
+        "service": "drishti-ai-inference",
+        "engine": _active_engine_label(),
+        "endpoints": ["/api/health", "/api/model/status", "/api/predict", "/docs"],
+    }
+
+
 @app.get("/health", response_model=HealthResponse)
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
