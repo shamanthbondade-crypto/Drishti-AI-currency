@@ -1,0 +1,221 @@
+/* ============================================================
+   Drishti AI - Global Styles
+   AI Currency Recognition Assistant for Visually Impaired People
+   ============================================================ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ----- Base layer overrides ----- */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-[#0a1633] text-white antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: calc(1rem * var(--font-scale, 1));
+  }
+
+  /* Ensure focus is always distinct and visible for accessibility & TalkBack */
+  *:focus-visible {
+    @apply outline-none ring-4 ring-cyan-400 ring-offset-2 ring-offset-[#0a1633] rounded-md;
+  }
+
+  /* Skip-to-content link (screen reader / keyboard users) */
+  .skip-link {
+    @apply absolute -top-full left-4 z-[9999] bg-cyan-500 text-gray-950 px-4 py-2 rounded-b-lg font-bold;
+    transition: top 0.2s ease;
+  }
+  .skip-link:focus {
+    @apply top-0;
+  }
+}
+
+/* ----- Component layer ----- */
+@layer components {
+  /* Accessible focus ring utility */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a1633] focus-visible:rounded-md;
+  }
+
+  /* Primary action button */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-teal-400 px-6 py-3 text-lg font-extrabold text-navy-950 shadow-lg transition-all duration-200;
+    @apply hover:from-cyan-300 hover:to-teal-300 active:scale-[0.97] focus-ring;
+  }
+
+  /* Secondary / outline button */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-cyan-500/40 bg-[#0f2347] px-6 py-3 text-lg font-bold text-cyan-200 transition-all duration-200;
+    @apply hover:border-cyan-400 hover:text-white active:scale-[0.97] focus-ring;
+  }
+
+  /* Card surface */
+  .card {
+    @apply rounded-2xl bg-[#0f2347]/90 backdrop-blur-md border border-cyan-500/20 p-5 shadow-xl;
+  }
+}
+
+/* ----- Utility layer & Themes ----- */
+@layer utilities {
+  /* Large text mode — applied via .large-text on <html> */
+  .large-text body,
+  .large-text .text-sm {
+    font-size: 1.125rem !important;
+    line-height: 1.75rem !important;
+  }
+  .large-text .text-base {
+    font-size: 1.25rem !important;
+    line-height: 1.875rem !important;
+  }
+  .large-text .text-lg {
+    font-size: 1.5rem !important;
+    line-height: 2rem !important;
+  }
+  .large-text .text-xl {
+    font-size: 1.75rem !important;
+    line-height: 2.25rem !important;
+  }
+  .large-text .text-2xl {
+    font-size: 2rem !important;
+    line-height: 2.5rem !important;
+  }
+
+  /* High-contrast mode — applied via .high-contrast on <html> */
+  .high-contrast body {
+    background-color: #000000 !important;
+    color: #fef08a !important; /* bright yellow text */
+  }
+  .high-contrast .card,
+  .high-contrast section,
+  .high-contrast div[role="region"] {
+    background-color: #050505 !important;
+    border-color: #fde047 !important;
+    border-width: 2px !important;
+  }
+  .high-contrast button {
+    border-width: 2px !important;
+  }
+
+  /* Light Theme — applied via .light-theme on <html> */
+  .light-theme body {
+    background-color: #f1f5f9 !important; /* slate-100 */
+    color: #0f172a !important; /* slate-900 */
+  }
+  .light-theme .min-h-screen {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+  }
+  .light-theme .card,
+  .light-theme section,
+  .light-theme .bg-\[\#0a1633\],
+  .light-theme .bg-\[\#0c2452\],
+  .light-theme .bg-\[\#0f2347\] {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+  }
+  .light-theme .text-white {
+    color: #0f172a !important;
+  }
+  .light-theme .text-gray-300,
+  .light-theme .text-gray-400 {
+    color: #334155 !important;
+  }
+  .light-theme .bg-navy-900,
+  .light-theme .bg-navy-950 {
+    background-color: #e2e8f0 !important;
+    color: #0f172a !important;
+  }
+  .light-theme header,
+  .light-theme nav {
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+  }
+  .light-theme .text-cyan-300,
+  .light-theme .text-cyan-400 {
+    color: #0369a1 !important;
+  }
+  .light-theme *:focus-visible {
+    ring-color: #0284c7 !important;
+    ring-offset-color: #ffffff !important;
+  }
+}
+
+/* ----- Reduced motion support ----- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ----- Custom keyframe animations ----- */
+
+/* Soft glowing pulse */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 8px 2px rgba(34, 211, 238, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 24px 8px rgba(34, 211, 238, 0.65);
+  }
+}
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Fade in */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+/* Slide up */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-slide-up {
+  animation: slide-up 0.35s ease-out forwards;
+}
+
+/* ----- Custom scrollbar ----- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-700 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-600;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #374151 transparent;
+}
