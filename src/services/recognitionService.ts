@@ -1,11 +1,16 @@
-import type { RecognitionResult, ModelStatus, Denomination } from '../types/index';
+import { Capacitor } from '@capacitor/core';
+import type { RecognitionResult, ModelStatus, Denomination, EngineUsed } from '../types/index';
 
-// In a Capacitor Android APK or web app:
-// Uses explicit backend URL if configured, otherwise falls back to localhost:3001
+// In a Capacitor Android APK, window.location.origin is https://localhost (the WebView itself).
+// Only use window.location.origin on non-native web browsers; on Android native, use VITE_API_BASE_URL
+// or fall back to http://10.0.2.2:3001 (Android emulator host).
+const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
 const API_BASE_URL: string =
   import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== 'undefined' && window.location.origin.startsWith('http')
+  (!isNative && typeof window !== 'undefined' && window.location.origin.startsWith('http')
     ? window.location.origin
+    : isNative
+    ? 'http://10.0.2.2:3001'
     : 'http://localhost:3001');
 
 export class RecognitionError extends Error {
@@ -140,7 +145,7 @@ class RecognitionService {
         status,
         isDemo: false,
         recognitionMode: 'real',
-        engineUsed: 'ai-backend',
+        engineUsed: (data.engine as EngineUsed) || 'ai-backend',
         timestamp: Date.now(),
       };
     }

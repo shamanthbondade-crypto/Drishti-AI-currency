@@ -27,7 +27,8 @@ interface AppProviderProps {
 }
 
 export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
-  const [recognitionMode, setRecognitionMode] = useState<RecognitionMode>('demo');
+  const [recognitionMode, setRecognitionModeState] = useState<RecognitionMode>('demo');
+  const [userOverrodeMode, setUserOverrodeMode] = useState(false);
   const [currentResult, setCurrentResult] = useState<RecognitionResult | null>(null);
   const [isModelAvailable, setIsModelAvailable] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -40,7 +41,12 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     }
   });
 
-  // Check model availability on mount
+  const setRecognitionMode = useCallback((mode: RecognitionMode) => {
+    setUserOverrodeMode(true);
+    setRecognitionModeState(mode);
+  }, []);
+
+  // Check model availability on mount; auto-enable Real AI mode when backend is ready
   useEffect(() => {
     let cancelled = false;
 
@@ -49,6 +55,9 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         const available = await recognitionService.isModelAvailable();
         if (!cancelled) {
           setIsModelAvailable(available);
+          if (available && !userOverrodeMode) {
+            setRecognitionModeState('real');
+          }
         }
       } catch {
         if (!cancelled) {
@@ -62,7 +71,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userOverrodeMode]);
 
   const completeOnboarding = useCallback(() => {
     setHasCompletedOnboarding(true);

@@ -133,8 +133,9 @@ export default function Upload() {
                 className="w-full h-64 object-contain rounded-2xl bg-black/80"
               />
               <button
+                type="button"
                 onClick={handleClear}
-                className="absolute top-4 right-4 p-2.5 rounded-full bg-black/70 hover:bg-black text-white border border-white/20 transition-all min-w-[40px] min-h-[40px] flex items-center justify-center"
+                className="absolute top-4 right-4 p-2.5 rounded-full bg-black/70 hover:bg-black text-white border border-white/20 transition-all min-w-[48px] min-h-[48px] flex items-center justify-center"
                 aria-label="Remove image"
               >
                 <X className="w-5 h-5" />

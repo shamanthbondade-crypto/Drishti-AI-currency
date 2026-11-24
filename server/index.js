@@ -183,6 +183,7 @@ app.post("/api/predict", upload.single("image"), async (req, res, next) => {
       data: {
         denomination: isUncertain ? "uncertain" : rawDenomination,
         confidence,
+        engine: prediction.engine || "ai-backend",
         status: isUncertain ? "uncertain" : "success",
         timestamp: new Date().toISOString(),
       },

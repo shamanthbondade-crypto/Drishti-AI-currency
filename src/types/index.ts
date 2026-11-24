@@ -27,7 +27,13 @@ export const DENOMINATION_VALUES: Record<Denomination, number> = {
 };
 
 /** Which inference engine produced this result */
-export type EngineUsed = 'ai-backend' | 'demo';
+export type EngineUsed =
+  | 'rapidocr+cnn'
+  | 'rapidocr-number-reader'
+  | 'tensorflow-keras-cnn'
+  | 'opencv-chroma-vision-v1'
+  | 'ai-backend'
+  | 'demo';
 
 /** Recognition mode: demo uses sample images, real uses camera/upload */
 export type RecognitionMode = 'demo' | 'real';

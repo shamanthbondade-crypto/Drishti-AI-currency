@@ -162,7 +162,7 @@ export default function Home() {
                   setRecognitionMode('demo');
                   speak('Switched to Demo Mode.');
                 }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all min-h-[44px] ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all min-h-[48px] ${
                   recognitionMode === 'demo'
                     ? 'bg-amber-500 text-gray-950 shadow-md'
                     : 'text-gray-400 hover:text-white'
@@ -178,7 +178,7 @@ export default function Home() {
                   setRecognitionMode('real');
                   speak('Switched to Real AI Mode.');
                 }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all min-h-[44px] ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all min-h-[48px] ${
                   recognitionMode === 'real'
                     ? 'bg-cyan-500 text-gray-950 shadow-md'
                     : 'text-gray-400 hover:text-white'
