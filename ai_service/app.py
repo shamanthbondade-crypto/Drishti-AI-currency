@@ -99,6 +99,8 @@ class HealthResponse(BaseModel):
 
 class ModelStatusResponse(BaseModel):
     available: bool
+    modelLoaded: bool
+    ocrLoaded: bool
     modelName: str
     status: str
     classes: List[str]
@@ -124,8 +126,8 @@ def _box_area(box: List[List[float]]) -> float:
         return 1.0
 
 
-def _scan_ocr_frame(img_bgr: np.ndarray) -> Optional[Tuple[str, float]]:
-    """Run RapidOCR on a single image orientation and score denomination matches."""
+def _scan_ocr_frame(img_bgr: np.ndarray) -> Optional[Tuple[str, float, bool]]:
+    """Run RapidOCR on a single image orientation and score plausible denomination matches."""
     if ocr_engine is None:
         return None
 
@@ -137,39 +139,46 @@ def _scan_ocr_frame(img_bgr: np.ndarray) -> Optional[Tuple[str, float]]:
     img_area = float(max(1, h * w))
     denom_scores: Dict[str, float] = {c: 0.0 for c in CLASSES}
     denom_best_conf: Dict[str, float] = {c: 0.0 for c in CLASSES}
+    denom_strong: Dict[str, bool] = {c: False for c in CLASSES}
 
     for item in result:
         box, text, conf = item[0], str(item[1]).upper().strip(), float(item[2])
-        if conf < 0.45:
+        if conf < 0.60:
             continue
 
         area_ratio = _box_area(box) / img_area
+        has_currency_hint = any(sym in text for sym in ("₹", "RS", "RUPEE"))
 
         # Check English denomination words (e.g., "FIVE HUNDRED RUPEES")
         for phrase, denom in WORD_TO_DENOM:
             if phrase in text:
                 denom_scores[denom] += conf * 1.5
                 denom_best_conf[denom] = max(denom_best_conf[denom], conf)
+                denom_strong[denom] = True
 
-        # Clean common OCR symbol artifacts around numbers (₹, Rs, commas, spaces)
+        # Clean common OCR symbol artifacts around numbers
         cleaned = text.replace("₹", " ").replace("RS.", " ").replace("RS", " ").replace(",", "")
         tokens = re.findall(r"\b\d+\b", cleaned)
         for tok in tokens:
             if tok in VALID_NUMBERS:
+                # Ignore tiny serial/year digits unless accompanied by currency hint
+                if area_ratio < 0.002 and not has_currency_hint:
+                    continue
                 denom = f"₹{tok}"
-                # Larger printed numerals on banknotes get higher weight than tiny serial/print digits
                 size_boost = 1.0 + min(3.0, area_ratio * 80.0)
                 denom_scores[denom] += conf * size_boost
                 denom_best_conf[denom] = max(denom_best_conf[denom], conf)
+                if has_currency_hint or area_ratio >= 0.01 or conf >= 0.85:
+                    denom_strong[denom] = True
 
     best_denom = max(denom_scores, key=denom_scores.get)
     if denom_scores[best_denom] <= 0.0:
         return None
 
-    return best_denom, round(min(0.99, max(0.55, denom_best_conf[best_denom])), 3)
+    return best_denom, round(min(0.99, denom_best_conf[best_denom]), 3), denom_strong[best_denom]
 
 
-def read_denomination_ocr(img_bgr: np.ndarray) -> Optional[Tuple[str, float]]:
+def read_denomination_ocr(img_bgr: np.ndarray) -> Optional[Tuple[str, float, bool]]:
     """Read printed denomination numbers/words, trying 90-degree rotation if needed."""
     match = _scan_ocr_frame(img_bgr)
     if match is not None:
@@ -279,7 +288,7 @@ async def root():
 async def health_check():
     return HealthResponse(
         status="ok",
-        model_loaded=keras_model is not None or ocr_engine is not None,
+        model_loaded=keras_model is not None,
         ocr_loaded=ocr_engine is not None,
         model_name=_active_engine_label(),
         classes=CLASSES,
@@ -290,10 +299,13 @@ async def health_check():
 @app.get("/model/status", response_model=ModelStatusResponse)
 @app.get("/api/model/status", response_model=ModelStatusResponse)
 async def model_status():
+    has_ml_or_ocr = keras_model is not None or ocr_engine is not None
     return ModelStatusResponse(
         available=True,
+        modelLoaded=keras_model is not None,
+        ocrLoaded=ocr_engine is not None,
         modelName=_active_engine_label(),
-        status="ready",
+        status="ready" if has_ml_or_ocr else "fallback_heuristic",
         classes=CLASSES,
         confidenceThreshold=CONFIDENCE_THRESHOLD,
     )
@@ -330,18 +342,27 @@ async def predict_banknote(image: UploadFile = File(...)):
             cv_res = classify_banknote(img_bgr)
             cv_engine = "opencv-chroma-vision-v1"
 
-        # Step 3: Prefer clear OCR numeral match when available
+        # Step 3: Use OCR when it is a strong match, agrees with CNN, or CNN is uncertain
         if ocr_match is not None:
-            ocr_denom, ocr_conf = ocr_match
-            probs = cv_res.get('probabilities') or {c: 0.0 for c in CLASSES}
-            return PredictionResponse(
-                denomination=ocr_denom,
-                confidence=ocr_conf,
-                status="success",
-                is_uncertain=False,
-                probabilities=probs,
-                engine="rapidocr+cnn" if keras_model is not None else "rapidocr-number-reader",
+            ocr_denom, ocr_conf, is_strong = ocr_match
+            cnn_agrees = (not cv_res['is_uncertain']) and (cv_res['denomination'] == ocr_denom)
+            cnn_confident_disagree = (
+                keras_model is not None
+                and not cv_res['is_uncertain']
+                and cv_res['denomination'] != ocr_denom
+                and cv_res['confidence'] >= 0.70
+                and not is_strong
             )
+            if not cnn_confident_disagree and (is_strong or cnn_agrees or cv_res['is_uncertain']):
+                probs = cv_res.get('probabilities') or {c: 0.0 for c in CLASSES}
+                return PredictionResponse(
+                    denomination=ocr_denom,
+                    confidence=ocr_conf,
+                    status="success",
+                    is_uncertain=False,
+                    probabilities=probs,
+                    engine="rapidocr+cnn" if keras_model is not None else "rapidocr-number-reader",
+                )
 
         return PredictionResponse(
             denomination=cv_res['denomination'],

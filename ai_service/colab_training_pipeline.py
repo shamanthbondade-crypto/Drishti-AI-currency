@@ -76,7 +76,8 @@ def build_model():
 
     inputs = keras.Input(shape=(224, 224, 3))
     x = data_augmentation(inputs)
-    x = layers.Rescaling(1./255)(x)
+    # MobileNetV2 expects [-1, 1] input range
+    x = layers.Rescaling(1.0 / 127.5, offset=-1.0)(x)
     x = base_model(x, training=False)
     x = layers.GlobalAveragePooling2D()(x)
     x = layers.BatchNormalization()(x)

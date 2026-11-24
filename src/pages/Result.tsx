@@ -84,6 +84,16 @@ export default function Result() {
     );
   }
 
+  const engineLabelMap: Record<string, string> = {
+    'rapidocr+cnn': 'OCR + Keras CNN',
+    'rapidocr-number-reader': 'OCR Number Reader',
+    'tensorflow-keras-cnn': 'Keras CNN',
+    'opencv-chroma-vision-v1': 'Color Heuristic',
+    'ai-backend': 'AI Backend',
+  };
+  const engineDisplay = result?.engineUsed ? (engineLabelMap[result.engineUsed] || result.engineUsed) : 'AI Backend';
+  const isHeuristic = result?.engineUsed === 'opencv-chroma-vision-v1';
+
   return (
     <Layout title="Banknote Recognized" showBack={false}>
       <div className="space-y-5 text-center">
@@ -107,11 +117,15 @@ export default function Result() {
               </span>
             ) : (
               <span
-                className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
-                aria-label="Recognized using AI model service"
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${
+                  isHeuristic
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                    : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
+                }`}
+                aria-label={`Recognized using ${engineDisplay}`}
               >
                 <Cpu className="w-3.5 h-3.5" aria-hidden="true" />
-                AI Model {result.confidence !== undefined ? `(${Math.round(result.confidence * 100)}%)` : ''}
+                {engineDisplay}
               </span>
             )}
           </div>
@@ -133,10 +147,10 @@ export default function Result() {
               {meta.details}
             </p>
 
-            {/* Confidence line (only when available and genuine AI) */}
+            {/* Score line (honestly labeled per engine) */}
             {!result.isDemo && result.confidence !== undefined && (
               <p className="text-xs text-gray-400 mt-1">
-                Model Confidence: {Math.round(result.confidence * 100)}%
+                {isHeuristic ? 'Color Heuristic Score' : `${engineDisplay} Score`}: {Math.round(result.confidence * 100)}%
               </p>
             )}
           </div>
