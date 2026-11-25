@@ -12,6 +12,7 @@ interface AppContextValue {
   currentResult: RecognitionResult | null;
   setCurrentResult: (result: RecognitionResult | null) => void;
   isModelAvailable: boolean;
+  refreshModelAvailability: (force?: boolean) => Promise<boolean>;
   capturedImage: string | null;
   setCapturedImage: (image: string | null) => void;
   isProcessing: boolean;
@@ -46,32 +47,27 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     setRecognitionModeState(mode);
   }, []);
 
+  const refreshModelAvailability = useCallback(
+    async (force = false): Promise<boolean> => {
+      try {
+        const available = await recognitionService.isModelAvailable(force);
+        setIsModelAvailable(available);
+        if (available && !userOverrodeMode) {
+          setRecognitionModeState('real');
+        }
+        return available;
+      } catch {
+        setIsModelAvailable(false);
+        return false;
+      }
+    },
+    [userOverrodeMode]
+  );
+
   // Check model availability on mount; auto-enable Real AI mode when backend is ready
   useEffect(() => {
-    let cancelled = false;
-
-    const checkModel = async () => {
-      try {
-        const available = await recognitionService.isModelAvailable();
-        if (!cancelled) {
-          setIsModelAvailable(available);
-          if (available && !userOverrodeMode) {
-            setRecognitionModeState('real');
-          }
-        }
-      } catch {
-        if (!cancelled) {
-          setIsModelAvailable(false);
-        }
-      }
-    };
-
-    checkModel();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [userOverrodeMode]);
+    void refreshModelAvailability();
+  }, [refreshModelAvailability]);
 
   const completeOnboarding = useCallback(() => {
     setHasCompletedOnboarding(true);
@@ -90,6 +86,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         currentResult,
         setCurrentResult,
         isModelAvailable,
+        refreshModelAvailability,
         capturedImage,
         setCapturedImage,
         isProcessing,

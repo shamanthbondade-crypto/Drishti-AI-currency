@@ -44,6 +44,15 @@ export default function Home() {
   const { settings } = useSettings();
   const [recentScans, setRecentScans] = useState<HistoryRecord[]>([]);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  const effectiveBackendUrl = recognitionService.getEffectiveBaseUrl();
+
+  const probeBackend = (force = false) => {
+    setBackendOnline(null);
+    recognitionService
+      .isBackendReachable(force)
+      .then(setBackendOnline)
+      .catch(() => setBackendOnline(false));
+  };
 
   useEffect(() => {
     // Load recent scans
@@ -54,10 +63,7 @@ export default function Home() {
     speak('Welcome to Drishti AI. Your currency recognition assistant is ready. Tap Scan Currency to begin scanning banknotes.');
 
     // Probe backend reachability
-    recognitionService
-      .isBackendReachable()
-      .then(setBackendOnline)
-      .catch(() => setBackendOnline(false));
+    probeBackend(true);
   }, []);
 
   const handleStartDemoScan = (denom: Denomination) => {
@@ -108,11 +114,10 @@ export default function Home() {
                       : 'Voice assistance is turned off.'
                   )
                 }
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                  settings.voiceEnabled
-                    ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
-                    : 'bg-gray-800 text-gray-400 border border-gray-700'
-                }`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all ${settings.voiceEnabled
+                  ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
+                  : 'bg-gray-800 text-gray-400 border border-gray-700'
+                  }`}
                 aria-label={`Voice assistance is ${settings.voiceEnabled ? 'enabled' : 'disabled'}`}
               >
                 {settings.voiceEnabled ? (
@@ -162,11 +167,10 @@ export default function Home() {
                   setRecognitionMode('demo');
                   speak('Switched to Demo Mode.');
                 }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all min-h-[48px] ${
-                  recognitionMode === 'demo'
-                    ? 'bg-amber-500 text-gray-950 shadow-md'
-                    : 'text-gray-400 hover:text-white'
-                }`}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all min-h-[48px] ${recognitionMode === 'demo'
+                  ? 'bg-amber-500 text-gray-950 shadow-md'
+                  : 'text-gray-400 hover:text-white'
+                  }`}
               >
                 DEMO MODE
               </button>
@@ -178,11 +182,10 @@ export default function Home() {
                   setRecognitionMode('real');
                   speak('Switched to Real AI Mode.');
                 }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all min-h-[48px] ${
-                  recognitionMode === 'real'
-                    ? 'bg-cyan-500 text-gray-950 shadow-md'
-                    : 'text-gray-400 hover:text-white'
-                }`}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all min-h-[48px] ${recognitionMode === 'real'
+                  ? 'bg-cyan-500 text-gray-950 shadow-md'
+                  : 'text-gray-400 hover:text-white'
+                  }`}
               >
                 REAL AI
               </button>
@@ -210,16 +213,37 @@ export default function Home() {
                   <span>AI Inference Service Connected (FastAPI + Vision Engine)</span>
                 </div>
               ) : (
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-1.5 text-amber-300">
-                    <WifiOff className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-start gap-1.5 text-amber-300">
+                    <WifiOff className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
                     <span>
-                      <strong>AI Backend Unavailable:</strong> Run Python service on port 8000/3001.
+                      {effectiveBackendUrl ? (
+                        <>
+                          <strong>AI Backend Unreachable:</strong> Could not connect to{' '}
+                          <code className="text-cyan-300">{effectiveBackendUrl}</code>.
+                        </>
+                      ) : (
+                        <>
+                          <strong>Backend IP Not Configured:</strong> Enter your laptop hotspot IP in Settings.
+                        </>
+                      )}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-gray-300 pl-5">
-                    <AlertCircle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-                    <span>Switch to Demo Mode to test full voice and UI features.</span>
+                  <div className="flex flex-wrap items-center gap-2 pl-5">
+                    <button
+                      type="button"
+                      onClick={() => navigate('/settings')}
+                      className="px-3 py-1.5 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-cyan-200 font-bold hover:bg-cyan-500/30 min-h-[36px]"
+                    >
+                      Configure Backend IP
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => probeBackend(true)}
+                      className="px-3 py-1.5 rounded-lg bg-white/10 border border-white/15 text-gray-200 font-semibold hover:bg-white/15 min-h-[36px]"
+                    >
+                      Retry
+                    </button>
                   </div>
                 </div>
               )}

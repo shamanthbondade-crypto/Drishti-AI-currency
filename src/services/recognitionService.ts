@@ -1,17 +1,67 @@
 import { Capacitor } from '@capacitor/core';
 import type { RecognitionResult, ModelStatus, Denomination, EngineUsed } from '../types/index';
 
-// In a Capacitor Android APK, window.location.origin is https://localhost (the WebView itself).
-// Only use window.location.origin on non-native web browsers; on Android native, use VITE_API_BASE_URL
-// or fall back to http://10.0.2.2:3001 (Android emulator host).
+export const BACKEND_URL_STORAGE_KEY = 'drishti_backend_url';
+const DEFAULT_BACKEND_PORT = '3001';
+
 const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform();
-const API_BASE_URL: string =
-  import.meta.env.VITE_API_BASE_URL ||
-  (!isNative && typeof window !== 'undefined' && window.location.origin.startsWith('http')
-    ? window.location.origin
-    : isNative
-    ? 'http://10.0.2.2:3001'
-    : 'http://localhost:3001');
+
+export type BackendUrlSource = 'custom' | 'env' | 'origin' | 'unconfigured';
+
+/**
+ * Normalize a user-supplied or env-supplied backend URL.
+ * Accepts full URLs (http://10.109.37.70:3001) or shorthand IPs/hosts (10.109.37.70 or 10.109.37.70:3001).
+ */
+export function normalizeBackendUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+
+  const hasScheme = /^https?:\/\//i.test(trimmed);
+  const withScheme = hasScheme ? trimmed : `http://${trimmed}`;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(withScheme);
+  } catch {
+    throw new Error('Enter a valid IP or URL (for example: 10.109.37.70 or http://10.109.37.70:3001).');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Backend URL must start with http:// or https://.');
+  }
+
+  if (!parsed.hostname) {
+    throw new Error('Backend URL is missing a host or IP address.');
+  }
+
+  // If the user entered a bare IP/host without an explicit port over HTTP, default to port 3001.
+  if (!parsed.port && parsed.protocol === 'http:') {
+    parsed.port = DEFAULT_BACKEND_PORT;
+  }
+
+  return parsed.origin + (parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/+$/, ''));
+}
+
+function getBuildTimeBaseUrl(): string {
+  const raw = import.meta.env.VITE_API_BASE_URL;
+  if (!raw || !raw.trim()) return '';
+  try {
+    return normalizeBackendUrl(raw);
+  } catch {
+    return '';
+  }
+}
+
+export function getCustomBackendUrl(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const raw = localStorage.getItem(BACKEND_URL_STORAGE_KEY) || '';
+    if (!raw.trim()) return '';
+    return normalizeBackendUrl(raw);
+  } catch {
+    return '';
+  }
+}
 
 export class RecognitionError extends Error {
   public readonly code: string;
@@ -32,25 +82,98 @@ function normalizeDenomination(val: string): Denomination {
 }
 
 class RecognitionService {
-  private baseUrl: string;
   private _backendOnline: boolean | null = null;
   private _lastProbeMs = 0;
   private readonly PROBE_TTL_MS = 8_000;
 
-  constructor(baseUrl: string = API_BASE_URL) {
-    this.baseUrl = baseUrl;
+  isNativePlatform(): boolean {
+    return isNative;
+  }
+
+  /**
+   * Resolve the active backend base URL without silently falling back to an emulator or stale IP.
+   * - Web browsers use the current origin (so Vite proxies /api in dev) unless overridden in Settings.
+   * - Native Android uses: (1) runtime Settings URL in localStorage, else (2) build-time VITE_API_BASE_URL,
+   *   else '' (explicitly unconfigured).
+   */
+  getEffectiveBaseUrl(): string {
+    const custom = getCustomBackendUrl();
+    if (custom) return custom;
+
+    if (!isNative && typeof window !== 'undefined' && window.location.origin.startsWith('http')) {
+      return window.location.origin;
+    }
+
+    const fromEnv = getBuildTimeBaseUrl();
+    if (fromEnv) return fromEnv;
+
+    if (!isNative) {
+      return `http://localhost:${DEFAULT_BACKEND_PORT}`;
+    }
+
+    return '';
+  }
+
+  getUrlSource(): BackendUrlSource {
+    if (getCustomBackendUrl()) return 'custom';
+    if (!isNative && typeof window !== 'undefined' && window.location.origin.startsWith('http')) {
+      return 'origin';
+    }
+    if (getBuildTimeBaseUrl()) return 'env';
+    return isNative ? 'unconfigured' : 'origin';
+  }
+
+  getBuildDefaultUrl(): string {
+    return getBuildTimeBaseUrl();
+  }
+
+  setCustomBaseUrl(rawUrl: string): string {
+    const normalized = normalizeBackendUrl(rawUrl);
+    if (typeof window !== 'undefined') {
+      try {
+        if (normalized) {
+          localStorage.setItem(BACKEND_URL_STORAGE_KEY, normalized);
+        } else {
+          localStorage.removeItem(BACKEND_URL_STORAGE_KEY);
+        }
+      } catch {
+        // Ignore storage write failure
+      }
+    }
+    this.invalidateProbe();
+    return this.getEffectiveBaseUrl();
+  }
+
+  clearCustomBaseUrl(): string {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem(BACKEND_URL_STORAGE_KEY);
+      } catch {
+        // Ignore storage write failure
+      }
+    }
+    this.invalidateProbe();
+    return this.getEffectiveBaseUrl();
   }
 
   /** Quick health probe: is the backend service reachable? */
-  async isBackendReachable(): Promise<boolean> {
+  async isBackendReachable(force = false): Promise<boolean> {
+    const baseUrl = this.getEffectiveBaseUrl();
+    if (!baseUrl) {
+      this._backendOnline = false;
+      this._lastProbeMs = Date.now();
+      return false;
+    }
+
     const now = Date.now();
-    if (this._backendOnline !== null && now - this._lastProbeMs < this.PROBE_TTL_MS) {
+    if (!force && this._backendOnline !== null && now - this._lastProbeMs < this.PROBE_TTL_MS) {
       return this._backendOnline;
     }
+
     try {
       const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 2500);
-      const r = await fetch(`${this.baseUrl}/api/health`, { signal: ctrl.signal });
+      const tid = setTimeout(() => ctrl.abort(), 3000);
+      const r = await fetch(`${baseUrl}/api/health`, { signal: ctrl.signal });
       clearTimeout(tid);
       this._backendOnline = r.ok;
     } catch {
@@ -62,6 +185,7 @@ class RecognitionService {
 
   private invalidateProbe() {
     this._backendOnline = null;
+    this._lastProbeMs = 0;
   }
 
   // ─── Demo Mode ───────────────────────────────────────────────
@@ -85,13 +209,21 @@ class RecognitionService {
   // ─── Real AI Mode ────────────────────────────────────────────
 
   async recognizeImage(imageFile: File | Blob): Promise<RecognitionResult> {
+    const baseUrl = this.getEffectiveBaseUrl();
+    if (!baseUrl) {
+      throw new RecognitionError(
+        'Backend server IP is not configured. Open Settings to enter your laptop hotspot IP (port 3001).',
+        'BACKEND_NOT_CONFIGURED',
+      );
+    }
+
     // Step 1: Check backend reachability
     const backendAvailable = await this.isBackendReachable();
 
     if (!backendAvailable) {
       this.invalidateProbe();
       throw new RecognitionError(
-        'AI model service is currently unavailable. Please start the backend service or switch to Demo Mode.',
+        `Cannot reach AI backend at ${baseUrl}. Make sure the laptop server is running and update the IP in Settings if your hotspot IP changed.`,
         'MODEL_UNAVAILABLE',
       );
     }
@@ -104,16 +236,16 @@ class RecognitionService {
     try {
       const ctrl = new AbortController();
       const tid = setTimeout(() => ctrl.abort(), 20000); // 20s timeout
-      response = await fetch(`${this.baseUrl}/api/predict`, {
+      response = await fetch(`${baseUrl}/api/predict`, {
         method: 'POST',
         body: formData,
         signal: ctrl.signal,
       });
       clearTimeout(tid);
-    } catch (err: any) {
+    } catch {
       this.invalidateProbe();
       throw new RecognitionError(
-        'Network error while connecting to AI model. Please check connection or use Demo Mode.',
+        `Network error connecting to ${baseUrl}. Check your phone hotspot connection or update the backend IP in Settings.`,
         'NETWORK_ERROR',
       );
     }
@@ -150,6 +282,14 @@ class RecognitionService {
       };
     }
 
+    if (response && response.status === 503) {
+      this.invalidateProbe();
+      throw new RecognitionError(
+        `Node backend at ${baseUrl} responded, but the Python AI service on port 8000 is not running.`,
+        'MODEL_UNAVAILABLE',
+      );
+    }
+
     this.invalidateProbe();
     throw new RecognitionError(
       'Unable to identify the currency clearly. Please try again.',
@@ -157,11 +297,25 @@ class RecognitionService {
     );
   }
 
-  async checkModelStatus(): Promise<ModelStatus> {
+  async checkModelStatus(force = false): Promise<ModelStatus> {
+    const baseUrl = this.getEffectiveBaseUrl();
+    if (!baseUrl) {
+      return {
+        available: false,
+        modelName: 'currency-vision-v1',
+        status: 'unconfigured',
+        lastChecked: Date.now(),
+      };
+    }
+
+    if (force) {
+      this.invalidateProbe();
+    }
+
     try {
       const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 2500);
-      const response = await fetch(`${this.baseUrl}/api/model/status`, { signal: ctrl.signal });
+      const tid = setTimeout(() => ctrl.abort(), 3000);
+      const response = await fetch(`${baseUrl}/api/model/status`, { signal: ctrl.signal });
       clearTimeout(tid);
 
       if (!response.ok) {
@@ -189,9 +343,9 @@ class RecognitionService {
     }
   }
 
-  async isModelAvailable(): Promise<boolean> {
+  async isModelAvailable(force = false): Promise<boolean> {
     try {
-      const status = await this.checkModelStatus();
+      const status = await this.checkModelStatus(force);
       return status.available;
     } catch {
       return false;

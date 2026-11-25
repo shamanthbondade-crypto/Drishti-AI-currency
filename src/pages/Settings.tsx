@@ -11,6 +11,9 @@ import {
   Languages,
   Sun,
   Moon,
+  Server,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import Button from '../components/Button';
@@ -21,7 +24,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useVoice } from '../contexts/VoiceContext';
 import { useApp } from '../contexts/AppContext';
 import { historyService } from '../services/historyService';
-import { recognitionService } from '../services/recognitionService';
+import { recognitionService, getCustomBackendUrl } from '../services/recognitionService';
 
 interface ToggleProps {
   label: string;
@@ -71,29 +74,106 @@ function Toggle({ label, description, checked, onChange, icon }: ToggleProps) {
 export default function Settings() {
   const { settings, updateSettings, resetSettings } = useSettings();
   const { speak, triggerHaptic } = useVoice();
-  const { recognitionMode } = useApp();
+  const { recognitionMode, setRecognitionMode, refreshModelAvailability } = useApp();
 
-  const [modelStatus, setModelStatus] = useState<{ available: boolean; modelName: string }>({
+  const [modelStatus, setModelStatus] = useState<{
+    available: boolean;
+    modelName: string;
+    status?: string;
+  }>({
     available: false,
     modelName: 'currency-vision-v1',
   });
+  const [backendUrlInput, setBackendUrlInput] = useState<string>(
+    () => getCustomBackendUrl() || recognitionService.getEffectiveBaseUrl()
+  );
+  const [isTestingBackend, setIsTestingBackend] = useState(false);
+  const [backendFeedback, setBackendFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
   const [resetModalOpen, setResetModalOpen] = useState(false);
   const [clearHistoryModalOpen, setClearHistoryModalOpen] = useState(false);
 
-  useEffect(() => {
-    recognitionService.checkModelStatus().then((status) => {
-      setModelStatus({
-        available: status.available,
-        modelName: status.modelName,
-      });
+  const probeCurrentBackend = async (force = false) => {
+    const status = await recognitionService.checkModelStatus(force);
+    setModelStatus({
+      available: status.available,
+      modelName: status.modelName,
+      status: status.status,
     });
+    return status;
+  };
+
+  useEffect(() => {
+    void probeCurrentBackend();
   }, []);
+
+  const handleSaveAndTestBackend = async () => {
+    triggerHaptic('selection');
+    setIsTestingBackend(true);
+    setBackendFeedback(null);
+
+    try {
+      const activeUrl = recognitionService.setCustomBaseUrl(backendUrlInput);
+      setBackendUrlInput(activeUrl);
+
+      if (!activeUrl) {
+        await probeCurrentBackend(true);
+        await refreshModelAvailability(true);
+        setBackendFeedback({
+          type: 'error',
+          message: 'No backend URL is configured. Enter your laptop hotspot IP (for example: 10.109.37.70).',
+        });
+        speak('No backend URL configured.');
+        return;
+      }
+
+      const reachable = await recognitionService.isBackendReachable(true);
+      const status = await probeCurrentBackend(true);
+      await refreshModelAvailability(true);
+
+      if (reachable && status.available) {
+        setRecognitionMode('real');
+        const msg = `Connected to ${activeUrl} (${status.modelName}). Real AI Mode enabled.`;
+        setBackendFeedback({ type: 'success', message: msg });
+        speak('Backend connected. Real AI mode is ready.');
+      } else if (reachable) {
+        const msg = `Node backend at ${activeUrl} responded, but the Python AI service on port 8000 is not ready.`;
+        setBackendFeedback({ type: 'error', message: msg });
+        speak('Node backend reached, but Python AI service is not ready.');
+      } else {
+        const msg = `Cannot reach ${activeUrl}. Verify hotspot connection, laptop services (ports 3001 and 8000), and firewall.`;
+        setBackendFeedback({ type: 'error', message: msg });
+        speak('Cannot reach backend server.');
+      }
+    } catch (err: any) {
+      setBackendFeedback({
+        type: 'error',
+        message: err?.message || 'Invalid backend URL.',
+      });
+      speak('Invalid backend URL.');
+    } finally {
+      setIsTestingBackend(false);
+    }
+  };
+
+  const handleResetBackendUrl = async () => {
+    triggerHaptic('selection');
+    setIsTestingBackend(true);
+    setBackendFeedback(null);
+    const defaultUrl = recognitionService.clearCustomBaseUrl();
+    setBackendUrlInput(defaultUrl);
+    await probeCurrentBackend(true);
+    await refreshModelAvailability(true);
+    setIsTestingBackend(false);
+    speak('Backend URL reset to default.');
+  };
 
   const handleTestVoice = () => {
     triggerHaptic('selection');
     speak(
-      `This is a Drishti AI voice test at speech rate ${settings.speechSpeed} times normal. Mode: ${
-        settings.accessibilityMode === 'voice' ? 'Voice Mode' : 'Visual Mode'
+      `This is a Drishti AI voice test at speech rate ${settings.speechSpeed} times normal. Mode: ${settings.accessibilityMode === 'voice' ? 'Voice Mode' : 'Visual Mode'
       }. Theme: ${settings.theme === 'light' ? 'Light Theme' : 'Dark Theme'}.`
     );
   };
@@ -146,11 +226,10 @@ export default function Settings() {
                   triggerHaptic('selection');
                   speak('Dark theme enabled.');
                 }}
-                className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg text-xs font-bold transition-all min-h-[48px] ${
-                  settings.theme !== 'light'
-                    ? 'bg-cyan-500 text-gray-950 shadow-md'
-                    : 'text-gray-400 hover:text-white'
-                }`}
+                className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg text-xs font-bold transition-all min-h-[48px] ${settings.theme !== 'light'
+                  ? 'bg-cyan-500 text-gray-950 shadow-md'
+                  : 'text-gray-400 hover:text-white'
+                  }`}
                 aria-label="Dark Theme. Deep navy background with cyan and yellow accents."
               >
                 <Moon className="w-4 h-4" aria-hidden="true" />
@@ -166,11 +245,10 @@ export default function Settings() {
                   triggerHaptic('selection');
                   speak('Light theme enabled.');
                 }}
-                className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg text-xs font-bold transition-all min-h-[48px] ${
-                  settings.theme === 'light'
-                    ? 'bg-amber-400 text-gray-950 shadow-md'
-                    : 'text-gray-400 hover:text-white'
-                }`}
+                className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg text-xs font-bold transition-all min-h-[48px] ${settings.theme === 'light'
+                  ? 'bg-amber-400 text-gray-950 shadow-md'
+                  : 'text-gray-400 hover:text-white'
+                  }`}
                 aria-label="Light Theme. High contrast light background with bold dark text."
               >
                 <Sun className="w-4 h-4" aria-hidden="true" />
@@ -260,11 +338,10 @@ export default function Settings() {
                       triggerHaptic('selection');
                       speak(`Text size set to ${label}.`);
                     }}
-                    className={`py-2 rounded-lg text-xs font-bold transition-all min-h-[44px] ${
-                      settings.fontSize === value
-                        ? 'bg-cyan-500 text-gray-950 shadow-md'
-                        : 'text-gray-400 hover:text-white'
-                    }`}
+                    className={`py-2 rounded-lg text-xs font-bold transition-all min-h-[44px] ${settings.fontSize === value
+                      ? 'bg-cyan-500 text-gray-950 shadow-md'
+                      : 'text-gray-400 hover:text-white'
+                      }`}
                   >
                     {label}
                   </button>
@@ -379,11 +456,10 @@ export default function Settings() {
                   {recognitionMode === 'demo' ? 'Sample demonstration notes' : 'Live camera or uploaded image'}
                 </div>
               </div>
-              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-                recognitionMode === 'demo'
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                  : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-              }`}>
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${recognitionMode === 'demo'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                }`}>
                 {recognitionMode.toUpperCase()} MODE
               </span>
             </div>
@@ -393,7 +469,31 @@ export default function Settings() {
             <div className="flex items-center justify-between text-xs">
               <span className="text-gray-300 font-semibold">Backend Service</span>
               <span className={modelStatus.available ? 'text-teal-400 font-bold' : 'text-amber-400 font-bold'}>
-                {modelStatus.available ? '● Connected' : '○ Standalone / Demo'}
+                {modelStatus.available
+                  ? '● Connected'
+                  : modelStatus.status === 'unconfigured'
+                    ? '○ URL Not Configured'
+                    : '○ Unreachable'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between text-xs gap-3">
+              <span className="text-gray-300 font-semibold">Active Backend URL</span>
+              <span className="text-cyan-300 font-mono text-[11px] truncate max-w-[200px]">
+                {recognitionService.getEffectiveBaseUrl() || 'Not configured'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-300 font-semibold">URL Source</span>
+              <span className="text-gray-400">
+                {recognitionService.getUrlSource() === 'custom'
+                  ? 'Saved in App'
+                  : recognitionService.getUrlSource() === 'env'
+                    ? 'Built into APK (.env)'
+                    : recognitionService.getUrlSource() === 'origin'
+                      ? 'Web Origin (Vite Proxy)'
+                      : 'Not Configured'}
               </span>
             </div>
 
@@ -405,6 +505,77 @@ export default function Settings() {
             <div className="flex items-center justify-between text-xs">
               <span className="text-gray-300 font-semibold">Supported Notes</span>
               <span className="text-cyan-300 font-bold">₹10, ₹20, ₹50, ₹100, ₹200, ₹500</span>
+            </div>
+
+            <hr className="border-white/10" />
+
+            {/* Editable Backend Server URL for Hotspot / LAN IP changes */}
+            <div className="space-y-2.5">
+              <label
+                htmlFor="backend-url-input"
+                className="text-xs font-bold text-white flex items-center gap-1.5"
+              >
+                <Server className="w-4 h-4 text-cyan-400" aria-hidden="true" />
+                Laptop Backend Server URL (Port 3001)
+              </label>
+
+              <input
+                id="backend-url-input"
+                type="url"
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={backendUrlInput}
+                onChange={(e) => setBackendUrlInput(e.target.value)}
+                placeholder="e.g. 10.109.37.70 or http://10.109.37.70:3001"
+                className="w-full bg-gray-900/90 border border-cyan-500/40 text-white rounded-xl py-2.5 px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-cyan-400 min-h-[48px]"
+                aria-label="Laptop backend server IP or URL"
+              />
+
+              <p className="text-[11px] text-gray-400 leading-snug">
+                On a phone hotspot, run <code className="text-cyan-300">ipconfig</code> on your laptop, copy the Wi-Fi IPv4 address, and tap <strong>Save &amp; Test</strong>. Bare IPs automatically use <code className="text-cyan-300">http://&lt;IP&gt;:3001</code>.
+              </p>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={handleSaveAndTestBackend}
+                  disabled={isTestingBackend}
+                  aria-label="Save backend URL and test connection"
+                >
+                  {isTestingBackend ? 'Testing…' : 'Save & Test'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={handleResetBackendUrl}
+                  disabled={isTestingBackend}
+                  aria-label="Reset backend URL to default"
+                >
+                  Reset Default
+                </Button>
+              </div>
+
+              {backendFeedback && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className={`flex items-start gap-2 rounded-xl p-2.5 text-xs border ${
+                    backendFeedback.type === 'success'
+                      ? 'bg-teal-500/15 border-teal-500/40 text-teal-200'
+                      : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                  }`}
+                >
+                  {backendFeedback.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-teal-400 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                  )}
+                  <span>{backendFeedback.message}</span>
+                </div>
+              )}
             </div>
           </Card>
         </section>

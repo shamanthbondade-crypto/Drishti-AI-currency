@@ -158,21 +158,18 @@ npm run dev
 
 Open **http://localhost:5173** in Google Chrome or Microsoft Edge.
 
-### 3. Connecting Phones & Teammates to Your Local Server (Wi-Fi / LAN)
+### 3. Connecting Phones & Teammates to Your Local Server (Phone Hotspot / Wi-Fi / LAN)
 
 If you or a teammate want an Android phone (APK) to use **Real AI Mode** against a locally running PC server:
 
-1. **Find the host PC's Wi-Fi IPv4 address:**
-   - Windows: run `ipconfig` and copy the **IPv4 Address** under Wi-Fi (e.g., `192.168.1.15`).
+1. **Find the host PC's hotspot/Wi-Fi IPv4 address:**
+   - Windows: run `ipconfig` and copy the **IPv4 Address** under **Wireless LAN adapter Wi-Fi** (e.g., `10.109.37.70` on a phone hotspot, or `192.168.1.15` on home Wi-Fi). `npm run server` also prints detected LAN/hotspot URLs on startup.
    - macOS/Linux: run `ifconfig` or `ip addr`.
 
-2. **Set the backend URL in `.env`** in the project root before building the APK:
-
-   ```env
-   VITE_API_BASE_URL=http://<HOST_PC_IP>:3001
-   ```
-
-   *(Vite bakes `VITE_API_BASE_URL` into the bundle at build time, so run `npm run build` and `npx cap sync android` whenever this IP changes.)*
+2. **Configure the backend URL in the Android app (no rebuild needed when IP changes):**
+   - Open **Settings → AI Engine Configuration → Laptop Backend Server URL (Port 3001)** inside the app.
+   - Enter your laptop's current IPv4 address (e.g., `10.109.37.70` or `http://10.109.37.70:3001`) and tap **Save & Test**.
+   - *(Optional, for a pre-configured APK default)* Set `VITE_API_BASE_URL=http://<HOST_PC_IP>:3001` in `.env` before running `npm run build` and `npx cap sync android`. Web dev (`npm run dev`) ignores `VITE_API_BASE_URL` on `http(s)://` origins and continues using the Vite `/api` proxy.
 
 3. **Allow port `3001` through Windows Firewall** (run PowerShell as **Administrator**):
 

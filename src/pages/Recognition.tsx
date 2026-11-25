@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   XCircle,
   Eye,
+  Settings,
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import Button from '../components/Button';
@@ -190,18 +191,33 @@ export default function Recognition() {
                 Scan Again
               </Button>
 
-              {error.code === 'MODEL_UNAVAILABLE' && (
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  fullWidth
-                  onClick={handleSwitchToDemo}
-                  iconLeft={<Eye className="w-5 h-5 text-amber-400" aria-hidden="true" />}
-                  className="font-bold border-amber-500/40 text-amber-300 min-h-[52px]"
-                  aria-label="Switch to Demo Mode to test denominations"
-                >
-                  Use Demo Mode
-                </Button>
+              {(error.code === 'MODEL_UNAVAILABLE' ||
+                error.code === 'BACKEND_NOT_CONFIGURED' ||
+                error.code === 'NETWORK_ERROR') && (
+                <>
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    fullWidth
+                    onClick={() => navigate('/settings')}
+                    iconLeft={<Settings className="w-5 h-5 text-cyan-400" aria-hidden="true" />}
+                    className="font-bold border-cyan-500/40 text-cyan-200 min-h-[52px]"
+                    aria-label="Open Settings to configure backend IP"
+                  >
+                    Configure Backend IP
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    fullWidth
+                    onClick={handleSwitchToDemo}
+                    iconLeft={<Eye className="w-5 h-5 text-amber-400" aria-hidden="true" />}
+                    className="font-bold border-amber-500/40 text-amber-300 min-h-[52px]"
+                    aria-label="Switch to Demo Mode to test denominations"
+                  >
+                    Use Demo Mode
+                  </Button>
+                </>
               )}
 
               <Button

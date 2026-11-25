@@ -1,4 +1,5 @@
 import "dotenv/config";
+import os from "node:os";
 import express from "express";
 import cors from "cors";
 import multer from "multer";
@@ -6,30 +7,45 @@ import multer from "multer";
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT) || 3001;
+const HOST = process.env.HOST || "0.0.0.0";
 const PYTHON_MODEL_SERVICE_URL =
   process.env.PYTHON_MODEL_SERVICE_URL || "http://localhost:8000";
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
   : ["http://localhost:5173", "http://localhost:3000", "http://localhost:8080"];
 
+const PRIVATE_LAN_ORIGIN_RE =
+  /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
+
+function getLanIpv4Addresses() {
+  const addresses = [];
+  const interfaces = os.networkInterfaces();
+  for (const [name, entries] of Object.entries(interfaces)) {
+    for (const entry of entries || []) {
+      if (entry.family === "IPv4" && !entry.internal) {
+        addresses.push({ name, address: entry.address });
+      }
+    }
+  }
+  return addresses;
+}
+
 // ---------------------------------------------------------------------------
 // Express app
 // ---------------------------------------------------------------------------
 const app = express();
 
-// CORS – allow configured origins and local/LAN/mobile development
+// CORS – allow configured origins and local/LAN/Capacitor mobile development
 app.use(
   cors({
     origin(origin, cb) {
       if (
         !origin ||
         ALLOWED_ORIGINS.includes(origin) ||
-        origin.startsWith("http://localhost") ||
-        origin.startsWith("https://localhost") ||
-        origin.startsWith("http://192.168.") ||
-        origin.startsWith("http://10.") ||
-        origin.startsWith("capacitor://")
+        PRIVATE_LAN_ORIGIN_RE.test(origin) ||
+        origin.startsWith("capacitor://") ||
+        origin.startsWith("ionic://")
       ) {
         return cb(null, true);
       }
@@ -253,8 +269,16 @@ app.use((err, _req, res, _next) => {
 // ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
-const server = app.listen(PORT, () => {
-  console.log(`🚀  Drishti AI backend listening on http://localhost:${PORT}`);
+const server = app.listen(PORT, HOST, () => {
+  console.log(`🚀  Drishti AI backend listening on http://${HOST}:${PORT}`);
+  console.log(`🏠  Local health check: http://localhost:${PORT}/api/health`);
+  const lanIps = getLanIpv4Addresses();
+  if (lanIps.length > 0) {
+    console.log("📱  LAN/Hotspot URLs for Android app:");
+    for (const { name, address } of lanIps) {
+      console.log(`    • [${name}] http://${address}:${PORT}`);
+    }
+  }
   console.log(`🤖  Python model service URL: ${PYTHON_MODEL_SERVICE_URL}`);
 });
 
