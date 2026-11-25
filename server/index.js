@@ -10,7 +10,7 @@ import multer from "multer";
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || "0.0.0.0";
 const PYTHON_MODEL_SERVICE_URL =
-  process.env.PYTHON_MODEL_SERVICE_URL || "http://localhost:8000";
+  process.env.PYTHON_MODEL_SERVICE_URL || "http://127.0.0.1:8000";
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
   : ["http://localhost:5173", "http://localhost:3000", "http://localhost:8080"];
@@ -175,7 +175,7 @@ app.post("/api/predict", upload.single("image"), async (req, res, next) => {
     let response;
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000); // 15 s
+      const timeout = setTimeout(() => controller.abort(), 45000); // 45 s for CPU inference
 
       response = await fetch(`${PYTHON_MODEL_SERVICE_URL}/api/predict`, {
         method: "POST",
@@ -183,7 +183,14 @@ app.post("/api/predict", upload.single("image"), async (req, res, next) => {
         signal: controller.signal,
       });
       clearTimeout(timeout);
-    } catch {
+    } catch (err) {
+      if (err && err.name === "AbortError") {
+        return res.status(504).json({
+          success: false,
+          status: "timeout",
+          error: "AI model inference timed out. Please try again with a clearer photo.",
+        });
+      }
       return res.status(503).json({
         success: false,
         status: "unavailable",

@@ -20,6 +20,7 @@ import numpy as np
 import cv2
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
@@ -54,7 +55,9 @@ try:
         import tensorflow as tf
         logger.info(f"Loading trained TensorFlow model from {MODEL_PATH}...")
         keras_model = tf.keras.models.load_model(MODEL_PATH)
-        logger.info("TensorFlow/Keras model loaded successfully.")
+        # Warm up TF execution graph so the first mobile request does not hit cold-start latency
+        keras_model.predict(np.zeros((1, 224, 224, 3), dtype=np.float32), verbose=0)
+        logger.info("TensorFlow/Keras model loaded and warmed up successfully.")
 except Exception as e:
     logger.info(f"TensorFlow/Keras model unavailable: {e}")
 
@@ -178,14 +181,27 @@ def _scan_ocr_frame(img_bgr: np.ndarray) -> Optional[Tuple[str, float, bool]]:
     return best_denom, round(min(0.99, denom_best_conf[best_denom]), 3), denom_strong[best_denom]
 
 
+def _resize_for_ocr(img_bgr: np.ndarray, max_side: int = 720) -> np.ndarray:
+    """Downscale high-res camera photos before OCR so CPU inference completes in a few seconds."""
+    h, w = img_bgr.shape[:2]
+    longest = max(h, w)
+    if longest <= max_side:
+        return img_bgr
+    scale = max_side / float(longest)
+    new_w = max(1, int(round(w * scale)))
+    new_h = max(1, int(round(h * scale)))
+    return cv2.resize(img_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+
 def read_denomination_ocr(img_bgr: np.ndarray) -> Optional[Tuple[str, float, bool]]:
     """Read printed denomination numbers/words across upright and 90/270-degree orientations."""
-    match = _scan_ocr_frame(img_bgr)
+    ocr_img = _resize_for_ocr(img_bgr)
+    match = _scan_ocr_frame(ocr_img)
     if match is not None:
         return match
 
     for rot in (cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE):
-        match = _scan_ocr_frame(cv2.rotate(img_bgr, rot))
+        match = _scan_ocr_frame(cv2.rotate(ocr_img, rot))
         if match is not None:
             return match
 
@@ -314,6 +330,51 @@ async def model_status():
     )
 
 
+def _run_inference_pipeline(img_bgr: np.ndarray) -> PredictionResponse:
+    """Synchronous CPU inference helper executed in FastAPI's threadpool."""
+    # Step 1: Read printed denomination number/words via OCR
+    ocr_match = read_denomination_ocr(img_bgr)
+
+    # Step 2: Run Keras CNN (or HSV fallback)
+    if keras_model is not None:
+        cv_res = predict_with_keras(img_bgr)
+        cv_engine = "tensorflow-keras-cnn"
+    else:
+        cv_res = classify_banknote(img_bgr)
+        cv_engine = "opencv-chroma-vision-v1"
+
+    # Step 3: Use OCR when it is a strong match, agrees with CNN, or CNN is uncertain
+    if ocr_match is not None:
+        ocr_denom, ocr_conf, is_strong = ocr_match
+        cnn_agrees = (not cv_res['is_uncertain']) and (cv_res['denomination'] == ocr_denom)
+        cnn_confident_disagree = (
+            keras_model is not None
+            and not cv_res['is_uncertain']
+            and cv_res['denomination'] != ocr_denom
+            and cv_res['confidence'] >= 0.70
+            and not is_strong
+        )
+        if not cnn_confident_disagree and (is_strong or cnn_agrees or cv_res['is_uncertain']):
+            probs = cv_res.get('probabilities') or {c: 0.0 for c in CLASSES}
+            return PredictionResponse(
+                denomination=ocr_denom,
+                confidence=ocr_conf,
+                status="success",
+                is_uncertain=False,
+                probabilities=probs,
+                engine="rapidocr+cnn" if keras_model is not None else "rapidocr-number-reader",
+            )
+
+    return PredictionResponse(
+        denomination=cv_res['denomination'],
+        confidence=cv_res['confidence'],
+        status=cv_res['status'],
+        is_uncertain=cv_res['is_uncertain'],
+        probabilities=cv_res['probabilities'],
+        engine=cv_engine,
+    )
+
+
 @app.post("/predict", response_model=PredictionResponse)
 @app.post("/api/predict", response_model=PredictionResponse)
 async def predict_banknote(image: UploadFile = File(...)):
@@ -334,47 +395,7 @@ async def predict_banknote(image: UploadFile = File(...)):
         if img_bgr is None:
             raise HTTPException(status_code=400, detail="Could not decode image with OpenCV.")
 
-        # Step 1: Read printed denomination number/words via OCR
-        ocr_match = read_denomination_ocr(img_bgr)
-
-        # Step 2: Run Keras CNN (or HSV fallback)
-        if keras_model is not None:
-            cv_res = predict_with_keras(img_bgr)
-            cv_engine = "tensorflow-keras-cnn"
-        else:
-            cv_res = classify_banknote(img_bgr)
-            cv_engine = "opencv-chroma-vision-v1"
-
-        # Step 3: Use OCR when it is a strong match, agrees with CNN, or CNN is uncertain
-        if ocr_match is not None:
-            ocr_denom, ocr_conf, is_strong = ocr_match
-            cnn_agrees = (not cv_res['is_uncertain']) and (cv_res['denomination'] == ocr_denom)
-            cnn_confident_disagree = (
-                keras_model is not None
-                and not cv_res['is_uncertain']
-                and cv_res['denomination'] != ocr_denom
-                and cv_res['confidence'] >= 0.70
-                and not is_strong
-            )
-            if not cnn_confident_disagree and (is_strong or cnn_agrees or cv_res['is_uncertain']):
-                probs = cv_res.get('probabilities') or {c: 0.0 for c in CLASSES}
-                return PredictionResponse(
-                    denomination=ocr_denom,
-                    confidence=ocr_conf,
-                    status="success",
-                    is_uncertain=False,
-                    probabilities=probs,
-                    engine="rapidocr+cnn" if keras_model is not None else "rapidocr-number-reader",
-                )
-
-        return PredictionResponse(
-            denomination=cv_res['denomination'],
-            confidence=cv_res['confidence'],
-            status=cv_res['status'],
-            is_uncertain=cv_res['is_uncertain'],
-            probabilities=cv_res['probabilities'],
-            engine=cv_engine,
-        )
+        return await run_in_threadpool(_run_inference_pipeline, img_bgr)
     except HTTPException:
         raise
     except Exception as e:

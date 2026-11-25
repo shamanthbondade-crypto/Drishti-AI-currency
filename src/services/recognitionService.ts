@@ -235,7 +235,7 @@ class RecognitionService {
     let response: Response | null = null;
     try {
       const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 20000); // 20s timeout
+      const tid = setTimeout(() => ctrl.abort(), 45000); // 45s timeout for CPU inference
       response = await fetch(`${baseUrl}/api/predict`, {
         method: 'POST',
         body: formData,
@@ -287,6 +287,13 @@ class RecognitionService {
       throw new RecognitionError(
         `Node backend at ${baseUrl} responded, but the Python AI service on port 8000 is not running.`,
         'MODEL_UNAVAILABLE',
+      );
+    }
+
+    if (response && response.status === 504) {
+      throw new RecognitionError(
+        'AI model took too long to respond. Hold the camera steady and try again.',
+        'NETWORK_ERROR',
       );
     }
 
