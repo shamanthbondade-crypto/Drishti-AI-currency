@@ -143,7 +143,7 @@ def _scan_ocr_frame(img_bgr: np.ndarray) -> Optional[Tuple[str, float, bool]]:
 
     for item in result:
         box, text, conf = item[0], str(item[1]).upper().strip(), float(item[2])
-        if conf < 0.60:
+        if conf < 0.50:
             continue
 
         area_ratio = _box_area(box) / img_area
@@ -162,13 +162,13 @@ def _scan_ocr_frame(img_bgr: np.ndarray) -> Optional[Tuple[str, float, bool]]:
         for tok in tokens:
             if tok in VALID_NUMBERS:
                 # Ignore tiny serial/year digits unless accompanied by currency hint
-                if area_ratio < 0.002 and not has_currency_hint:
+                if area_ratio < 0.0015 and not has_currency_hint:
                     continue
                 denom = f"₹{tok}"
                 size_boost = 1.0 + min(3.0, area_ratio * 80.0)
                 denom_scores[denom] += conf * size_boost
                 denom_best_conf[denom] = max(denom_best_conf[denom], conf)
-                if has_currency_hint or area_ratio >= 0.01 or conf >= 0.85:
+                if has_currency_hint or area_ratio >= 0.008 or conf >= 0.80:
                     denom_strong[denom] = True
 
     best_denom = max(denom_scores, key=denom_scores.get)
@@ -179,14 +179,17 @@ def _scan_ocr_frame(img_bgr: np.ndarray) -> Optional[Tuple[str, float, bool]]:
 
 
 def read_denomination_ocr(img_bgr: np.ndarray) -> Optional[Tuple[str, float, bool]]:
-    """Read printed denomination numbers/words, trying 90-degree rotation if needed."""
+    """Read printed denomination numbers/words across upright and 90/270-degree orientations."""
     match = _scan_ocr_frame(img_bgr)
     if match is not None:
         return match
 
-    # Try 90-degree rotated frame for vertical/sideways handheld notes
-    rotated = cv2.rotate(img_bgr, cv2.ROTATE_90_CLOCKWISE)
-    return _scan_ocr_frame(rotated)
+    for rot in (cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE):
+        match = _scan_ocr_frame(cv2.rotate(img_bgr, rot))
+        if match is not None:
+            return match
+
+    return None
 
 
 def classify_banknote(img_bgr: np.ndarray) -> dict:
